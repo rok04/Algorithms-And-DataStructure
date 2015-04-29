@@ -124,6 +124,36 @@ void rev(struct node **head)
 		       	
 		       }
 	}
+	
+	
+		void swapp3(struct node **head)//with 3 nodes exchange
+	{
+		
+		struct node * temp=*head;
+		
+		if(*head==NULL)
+		    {
+		    	
+		    	cout<<"EMPTY list";
+  return ;
+
+		    }
+		    int count=0;
+		    while(temp->link->link!=NULL)
+		       {
+		       	count++;
+		       	if(count%3==1)
+		       	   {
+		       	   	swap(temp->data,temp->link->data);
+		       	   	swap(temp->link->data,temp->link->link->data);  
+		       	    }
+		       	   temp=temp->link;
+		       	   
+		       	
+		       }
+	}
+
+	
 
 	
 int main() {
@@ -137,6 +167,9 @@ int main() {
 	printlist(head);
 	swapp(&head);
 //	rev(&head);
+	cout<<endl;
+	printlist(head);
+	swapp3(&head);
 	cout<<endl;
 	printlist(head);
 }
