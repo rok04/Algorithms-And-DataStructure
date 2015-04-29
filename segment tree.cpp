@@ -3,7 +3,7 @@
 #include<algorithm>
 #include<cstdio>
 #define MAXI 100000000;
-#define  lld long long int
+
 using namespace std;
 struct node{
 
