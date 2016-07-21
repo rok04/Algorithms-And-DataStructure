@@ -1,0 +1,167 @@
+% Extract the information from .info file and upload the ecg data from 
+% .mat format to the 'val' array , time is stored in 'time' array 
+infoName = strcat('a01m', '.info'); 
+matName = strcat('a01m', '.mat'); 
+load(matName); 
+fid = fopen(infoName, 'rt'); 
+fgetl(fid); 
+fgetl(fid); 
+fgetl(fid); 
+
+[freqint] = sscanf(fgetl(fid), 'Sampling frequency: %f Hz Sampling interval: %f sec'); 
+interval = freqint(2); 
+fgetl(fid);
+
+for i = 1:size(val, 1) 
+[row(i), signal(i), gain(i), base(i), units(i)]=strread(fgetl(fid),'%d%s%f%f%s','delimiter','\t'); 
+end 
+
+fclose(fid); 
+val(val==-32768) = NaN; 
+for i = 1:size(val, 1) 
+val(i, :) = (val(i, :) - base(i)) / gain(i); 
+end 
+
+x = (1:size(val, 2)) * interval; 
+plot(x', val'); 
+t=x'; 
+val=val'; 
+for i = 1:length(signal) 
+labels{i} = strcat(signal{i}, ' (', units{i}, ')'); 
+end 
+
+% set the initial time to be skiped 
+skip = 2000; % amount of time to skip in the signal 
+fs = 100; % sampling frequency 
+Ts = 1/100; % sampling time between each sample
+
+% Skip first 2000 sec because of unstability of signal in starting time 
+x = val((skip*fs+1):end); % new signal after skipping first 2000 sec. 
+t = t((skip*fs+1):end); % new time after skipping first 2000 sec. 
+Ts = 1/100; % spacing between each sample 
+tt = max(t); % find total time 
+min = floor((tt-skip)/60); % find number of minute 
+start = 0; % initialize start time 
+last = 60; % initialize end time 
+
+%Create the Array of power related to .03HZ and .1Hz 
+p03 = zeros(1,min); % initialize power array for 3*10^-2 Hz.Size of array is no of minutes 
+p01 = zeros(1,min); % initialize power array for 0.1 Hz. Size of array is no of minutes 
+ti = [start+Ts:Ts:last]; % find the time interval in 1 minute 
+lt = length(ti); % find the length of time interval in 1 minute 
+
+%% Find power at 0.1 Hz and 0.03 Hz 
+for a=1:(min) % Evalute for each minute 
+si = round(fs*start); % find index of start time 
+temp = x(si+1:si+lt); % signal at 1 specific minute, need +1 because index for array starts at 1 
+
+[S F T P] = spectrogram(temp,[],[],[],fs); % spectrogram of an 1 minute signal, [] => take default values <<spectrogram(x,window,noverlap,F)>> 
+% here S is fourier transform of the signal temp
+% Here matrix P containing the power spectral density (PSD) of each segment. 
+% Hamming window of length nfft. 
+% noverlap is the number of samples that each segment overlaps. The default value is the number producing 50% overlap between segments. 
+
+index1 = max(find(F<=0.1)); % index of frequency closest to .1 Hz. 
+%f1 -> index of frequency closest to 0.1 Hz. Here 'find' function return the vector containing the value whose freq is near about .1 Hz 
+% f2-> %index of frequency closest to 0.03 Hz. Here 'find' function return the vector containing the value whose freq is near about .03 Hz 
+
+index03 = max(find(F<=.03)); % index of frequency closest to 3*10^-2 Hz 
+start = start + 60; % increment start time 
+p03(a) = sum(abs(S(index03,:))); % filling up 3*10^-2 Hz power array 
+p01(a) = sum(abs(S(index1,:))); % filling up 0.1 Hz power array 
+end 
+
+figure(3); 
+plot(p01) 
+figure(2); 
+plot(P); 
+
+%% Filter the Signal to 20% of total time 
+filt_val = val(1:end); 
+per = .99; % initialize percentile to .98 
+while (1) 
+start = 0; 
+thresold0_1 = quantile(p01,per); % find threshold of power array for 1*10^-1 Hz
+%Quantile returns quantiles of the values in data vector p01 for the cumulative probability or probabilities p in the interval [0,1] 
+thresold0_03 = quantile(p03,per); % find threshold of power array for 3*10^-2Hz 
+% Quantile returns quantiles of the values in data vector p03 for the cumulative probability or probabilities p in the interval [0,1] 
+
+for k=1:min % Check if power is greater Then Threshold power then eleminate them 
+if ((p03(k) > thresold0_03) && (p01(k) > thresold0_1)) 
+temp_index = round(fs*start); % find the starting index of a specific minute 
+filt_val(temp_index+1:(temp_index+lt)) = 0; % zero the signal when powers are greater than the threshold 
+end 
+
+start = start + 60; % Next Minute 
+end 
+
+per = per - 0.01; % Decrement the precentile by 0.01 
+
+%% Calculate Power in every frequency 
+temp_size = 1025; % size of frequency vector, achieved value through experimentation 
+start = 0; 
+sum_Total = zeros(min,temp_size); 
+
+for a=1:min 
+si = round(fs*start); 
+temp = filt_val(si+1:si+lt); % signal of a specific minute [S F T] = spectrogram(temp,[],[],[],fs);% spectrogram of an 1 minute signal, [] => take default values 
+
+start = start + 60; % increment to next minute 
+
+for b =1:length(S) 
+sum_Total(a,b) = sum(abs(S(b,:))); % 2-Darray to store all the power values. The dimension correspond to time x freq. 
+end 
+end 
+
+%% Find Avg Power 
+dim = size(sum_Total); % get total size if power sum 
+avgPower = zeros(1,dim(2)); % initialize array to hold the average power 
+for i=1:dim(2) 
+total_temp = 0; % reset the total power to zero 
+for k=1:dim(1) 
+total_temp = total_temp + sum_Total(k,i); % calculate the total power 
+end 
+avgPower(i) = total_temp/dim(1); % calculate the average power using the 
+% total power and the number of minutes 
+end 
+
+%% Find Index at f = 5*10^-3 and 35*10^-3Hz 
+index005 = max(find(F<=0.005)); % find index closest to 0.005 Hz
+index035 = max(find(F<=0.035)); % find index closest to 0.035 Hz 
+if (index005 == index035) % if indexes are equal increment one of % them by 2 
+index035 = index035 + 2; 
+end 
+
+peak = max(avgPower(index005:index035)); % find peak from 0.005Hz to 0.035Hz 
+
+P = mean(avgPower(index005:index035)); % calculate average from 0.005Hz to 
+% 0.035Hz 
+
+diff = peak - P; % find the difference between peak and mean 
+
+prob_sig = (1-(length(find(filt_val==0))/length(filt_val)))*100; % find the amount of signal remaining after discarding minutes 
+
+if ((prob_sig <= 20)) % if amount of signal remaining is less 
+% than or equal to 20% then patient does 
+% not have Apnea 
+Check_apnea = 0; 
+break; 
+else 
+
+if ((diff > 0.1*P)) % if difference is greater than 10% of 
+% average, then patient has Apnea 
+Check_apnea = 1; 
+break; 
+
+end 
+
+end 
+
+end 
+% Display Results of Patient's ECG 
+if (Check_apnea == 1)
+fprintf('Patient has Sleep Apnea .'); 
+
+else 
+fprintf('Patient Does not have Sleep Apnea .He/She is normal'); 
+end
